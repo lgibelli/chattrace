@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="200 210 624 624" width="624" height="624">
+  <!-- ChatTrace Forensic mark. SPDX-License-Identifier: GPL-3.0-or-later -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16305a"/><stop offset="1" stop-color="#08142a"/>
+    </linearGradient>
+    <linearGradient id="bubble" gradientUnits="userSpaceOnUse" x1="420" y1="238" x2="600" y2="806">
+      <stop offset="0" stop-color="#3be0cf"/><stop offset="1" stop-color="#13a4a0"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#bubble)">
+    <path d="M376 238 H648 A150 150 0 0 1 798 388 V552 A150 150 0 0 1 648 702 H462 C420 742 360 782 300 806 C290 810 284 802 290 794 C316 760 330 734 336 697 A150 150 0 0 1 226 552 V388 A150 150 0 0 1 376 238 Z"/>
+  </g>
+  <g fill="none" stroke="#0a1a33" stroke-width="30" stroke-linecap="round">
+    <path d="M476.3 455.0 A38.0 38.0 0 1 1 476.3 481.0"/>
+    <path d="M434.9 496.0 A82.0 82.0 0 0 1 553.0 397.0"/>
+    <path d="M572.9 413.1 A82.0 82.0 0 0 1 484.0 545.1"/>
+    <path d="M402.9 531.0 A126.0 126.0 0 0 1 468.9 349.6"/>
+    <path d="M507.6 342.1 A126.0 126.0 0 0 1 575.0 577.1"/>
+    <path d="M347.8 512.0 A170.0 170.0 0 0 1 570.1 308.3"/>
+    <path d="M611.9 330.5 A170.0 170.0 0 0 1 666.1 539.8"/>
+  </g>
+</svg>

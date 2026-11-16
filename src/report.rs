@@ -1,0 +1,391 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//! Self-contained HTML report with every metadata field visible.
+//!
+//! Safety: message content is always written as escaped text (never as HTML),
+//! and each page carries a Content-Security-Policy that forbids scripts and
+//! any network load, so opening the report cannot fetch remote images or run
+//! anything embedded in a chat message.
+
+use crate::teams::{self, Conversation, Dataset, Message, Variant, local, utc};
+use anyhow::Result;
+use serde_json::Value as Json;
+use std::fmt::Write as _;
+use std::path::Path;
+
+pub fn esc(s: &str) -> String {
+    let mut o = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        match c {
+            '&' => o.push_str("&amp;"),
+            '<' => o.push_str("&lt;"),
+            '>' => o.push_str("&gt;"),
+            '"' => o.push_str("&quot;"),
+            '\'' => o.push_str("&#39;"),
+            _ => o.push(c),
+        }
+    }
+    o
+}
+
+const CSS: &str = r#"
+:root{--navy:#0b1f3a;--teal:#14a3a3;--ink:#1d2733;--muted:#5f6b7a;--line:#e3e8ef;--bg:#f6f8fb;--amber:#b86e00;--red:#b42318;--green:#1e7b4a}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+header.top{background:var(--navy);color:#fff;padding:20px 32px}header.top h1{margin:0;font-size:20px;font-weight:650}header.top .sub{opacity:.75;font-size:13px}
+header.top .brand{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#7fe0d8}
+main{max-width:1180px;margin:0 auto;padding:24px 32px 64px}
+h2{font-size:17px;margin:28px 0 10px;color:var(--navy)}h3{font-size:15px;margin:18px 0 8px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0}
+table{border-collapse:collapse;width:100%;background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top;font-size:13px}th{background:#eef2f7;font-weight:600;color:var(--muted)}
+td.k{width:230px;color:var(--muted)}code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;word-break:break-all}
+.note{border-left:4px solid var(--teal);background:#eaf7f6}.warn{border-left:4px solid var(--amber);background:#fff6e8}
+.day{text-align:center;margin:26px 0 8px}.day span{background:#e7ecf3;color:var(--muted);border-radius:99px;padding:3px 12px;font-size:12px;font-weight:600}
+article.msg{background:#fff;border:1px solid var(--line);border-radius:10px;margin:10px 0;padding:12px 14px;break-inside:avoid}
+article.msg.own{border-left:4px solid var(--teal)}article.msg.deleted{background:#fff5f4}article.msg.earlier{background:#fffaf0;border-style:dashed;margin-left:28px}
+article.msg.system{background:#f9fafc}
+.mh{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}.mh .time{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--muted)}.mh .who{font-weight:650}
+.badge{font-size:11px;font-weight:650;border-radius:99px;padding:1px 8px;background:#eef2f7;color:var(--muted)}.b-edit{background:#e8f0ff;color:#2848a8}.b-del{background:#fde8e6;color:var(--red)}.b-old{background:#fff0d6;color:var(--amber)}.b-own{background:#e0f5f3;color:#0f7a74}.b-crc{background:#fde8e6;color:var(--red)}
+.text{white-space:pre-wrap;margin:8px 0 10px;font-size:14.5px}.system .text{font-style:italic;color:var(--muted)}
+dl.meta{display:grid;grid-template-columns:170px 1fr 170px 1fr;gap:2px 12px;margin:0;font-size:12px;border-top:1px solid var(--line);padding-top:8px}
+dl.meta dt{color:var(--muted)}dl.meta dd{margin:0;font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+dl.meta dd.wide{grid-column:2 / span 3}
+pre.raw{white-space:pre-wrap;word-break:break-all;background:#0f1720;color:#d6e2ee;border-radius:8px;padding:10px 12px;font-size:11.5px;margin:8px 0 0}
+details>summary{cursor:pointer;color:var(--muted);font-size:12px;margin-top:6px}
+footer{color:var(--muted);font-size:12px;margin-top:40px;border-top:1px solid var(--line);padding-top:12px}
+a{color:#0f6f8f}
+@media print{body{background:#fff}header.top{background:#fff;color:#000;border-bottom:2px solid #000}article.msg,.card{border-color:#999}pre.raw{background:#f3f3f3;color:#000}}
+"#;
+
+fn page(title: &str, subtitle: &str, body: &str) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="ChatTrace Forensic {ver}">
+<title>{t}</title><style>{CSS}</style></head><body>
+<header class="top"><div class="brand">ChatTrace Forensic · evidence report</div><h1>{t}</h1><div class="sub">{s}</div></header>
+<main>{body}
+<footer>Generated by ChatTrace Forensic {ver} from the copy in <code>original/</code>. Message content is shown as escaped text; nothing in this report loads remote content.
+ChatTrace Forensic is not affiliated with Microsoft. Microsoft Teams and Microsoft Purview are trademarks of Microsoft Corporation.</footer>
+</main></body></html>"#,
+        ver = env!("CARGO_PKG_VERSION"),
+        t = esc(title),
+        s = esc(subtitle),
+    )
+}
+
+pub fn slug(c: &Conversation) -> String {
+    let base: String = c
+        .title
+        .chars()
+        .map(|ch| if ch.is_alphanumeric() { ch.to_ascii_lowercase() } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    let base: String = base.chars().take(60).collect();
+    use sha2::{Digest, Sha256};
+    let h = hex::encode(&Sha256::digest(format!("{}|{}", c.account, c.id).as_bytes())[..4]);
+    if base.is_empty() { format!("conversation-{h}") } else { format!("{base}-{h}") }
+}
+
+fn kv(rows: &[(&str, String)]) -> String {
+    let mut t = String::from("<table>");
+    for (k, v) in rows {
+        let _ = write!(t, "<tr><td class=\"k\">{}</td><td>{}</td></tr>", esc(k), v);
+    }
+    t.push_str("</table>");
+    t
+}
+
+fn json_str(v: Option<&Json>) -> String {
+    match v {
+        None | Some(Json::Null) => String::new(),
+        Some(Json::String(s)) => s.clone(),
+        Some(x) => x.to_string(),
+    }
+}
+
+/// index.html: capture details, guidance, coverage, conversation index.
+fn index_html(ds: &Dataset, capture: &Json) -> String {
+    let mut b = String::new();
+    let c = capture;
+    let host = &c["host"];
+    b.push_str("<div class=\"card note\"><b>Read this first.</b> This report was generated from the <i>local cache</i> of the Microsoft Teams desktop client on one computer. \
+        It contains only what that client had downloaded. When the organization's Microsoft Purview (eDiscovery / Content search) is available, \
+        its export is the authoritative and complete record and should be preferred; this report is meant for situations where that access is not available.</div>");
+    b.push_str("<h2>Capture</h2>");
+    b.push_str(&kv(&[
+        ("Case / reference", esc(&json_str(c.get("case_reference")))),
+        ("Examiner", esc(&json_str(c.get("examiner")))),
+        ("Notes", esc(&json_str(c.get("notes")))),
+        ("Started (UTC)", esc(&json_str(c.get("started_utc")))),
+        ("Started (local)", esc(&json_str(c.get("started_local")))),
+        ("Time zone", esc(&json_str(c.get("timezone")))),
+        ("Host / OS user", esc(&format!("{} / {}", json_str(host.get("hostname")), json_str(host.get("os_user"))))),
+        ("Operating system", esc(&format!("{} {}", json_str(host.get("os")), json_str(host.get("os_version"))))),
+        ("Teams app version (this computer)", esc(&json_str(host.get("teams_app_version")))),
+        ("Source", format!("<code>{}</code>", esc(&json_str(c.get("source_paths"))))),
+        ("Source kind", esc(&json_str(c.get("source_kind")))),
+        ("Source is this computer's live Teams profile", esc(&json_str(c.get("source_is_live_local_profile")))),
+        ("Source volume mounted read-only", esc(&json_str(c.get("source_volume_read_only")))),
+        ("Teams running during capture", esc(&json_str(c.get("teams_running_during_capture")))),
+        ("Method", esc(&json_str(c.get("method")))),
+    ]));
+    if let Some(w) = c.get("warnings").and_then(|w| w.as_array()).filter(|w| !w.is_empty()) {
+        b.push_str("<div class=\"card warn\"><b>Warnings</b><ul>");
+        for x in w {
+            let _ = write!(b, "<li>{}</li>", esc(x.as_str().unwrap_or("")));
+        }
+        b.push_str("</ul></div>");
+    }
+
+    b.push_str("<h2>Accounts</h2><table><tr><th>Account</th><th>Tenant ID</th><th>User ID</th><th>Conversations</th><th>Messages</th><th>Earlier versions</th><th>First message (UTC)</th><th>Last message (UTC)</th></tr>");
+    for a in &ds.accounts {
+        let ms: Vec<&Message> = ds.messages.iter().filter(|m| m.account == a.key).collect();
+        let latest: Vec<&&Message> = ms.iter().filter(|m| m.variant == Variant::Latest).collect();
+        let arr: Vec<f64> = latest.iter().filter_map(|m| m.arrival).collect();
+        let _ = write!(
+            b,
+            "<tr><td>{}</td><td class=\"mono\">{}</td><td class=\"mono\">{}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"mono\">{}</td><td class=\"mono\">{}</td></tr>",
+            esc(&a.label()),
+            esc(&a.tenant_id),
+            esc(&a.user_id),
+            ds.conversations.iter().filter(|c| c.account == a.key).count(),
+            latest.len(),
+            ms.len() - latest.len(),
+            esc(&utc(arr.iter().copied().reduce(f64::min))),
+            esc(&utc(arr.iter().copied().reduce(f64::max))),
+        );
+    }
+    b.push_str("</table>");
+
+    b.push_str("<h2>Conversations</h2><table><tr><th>Conversation</th><th>Type</th><th>Account</th><th>Messages</th><th>Last activity (UTC)</th><th>Cache purges</th></tr>");
+    for c in &ds.conversations {
+        let acc = ds.account(&c.account).map(|a| a.label()).unwrap_or_default();
+        let _ = write!(
+            b,
+            "<tr><td><a href=\"conversations/{}.html\">{}</a><br><span class=\"mono\">{}</span></td><td>{}</td><td>{}</td><td>{}</td><td class=\"mono\">{}</td><td>{}</td></tr>",
+            slug(c),
+            esc(&c.title),
+            esc(&c.id),
+            esc(&c.kind),
+            esc(&acc),
+            c.message_count,
+            esc(&utc(c.last_activity)),
+            c.cache_purges.len()
+        );
+    }
+    b.push_str("</table>");
+
+    if let Some(l) = c.get("limitations").and_then(|l| l.as_array()) {
+        b.push_str("<h2>Limitations</h2><div class=\"card\"><ul>");
+        for x in l {
+            let _ = write!(b, "<li>{}</li>", esc(x.as_str().unwrap_or("")));
+        }
+        b.push_str("</ul></div>");
+    }
+    b.push_str("<h2>How to verify</h2><div class=\"card\">Every file in the package is listed with its SHA-256 in <code>SHA256SUMS</code> and <code>manifest.json</code>. \
+        Run <code>shasum -a 256 -c SHA256SUMS</code> (macOS/Linux) or <code>sha256sum -c SHA256SUMS</code> in the extracted folder. \
+        The zip's own SHA-256 is in the <code>.sha256</code> file written next to it.</div>");
+    page(
+        "Evidence report",
+        &format!(
+            "{} accounts · {} conversations · {} messages",
+            ds.accounts.len(),
+            ds.conversations.len(),
+            ds.messages.iter().filter(|m| m.variant == Variant::Latest).count()
+        ),
+        &b,
+    )
+}
+
+fn meta_row(out: &mut String, k: &str, v: &str, wide: bool) {
+    if v.is_empty() {
+        return;
+    }
+    let _ = write!(out, "<dt>{}</dt><dd{}>{}</dd>", esc(k), if wide { " class=\"wide\"" } else { "" }, esc(v));
+}
+
+fn message_html(m: &Message) -> String {
+    let mut cls = vec!["msg"];
+    if m.from_me {
+        cls.push("own");
+    }
+    if m.deleted.is_some() {
+        cls.push("deleted");
+    }
+    if m.variant == Variant::Earlier {
+        cls.push("earlier");
+    }
+    if m.is_system() {
+        cls.push("system");
+    }
+    let mut h = String::new();
+    let _ =
+        write!(h, "<article class=\"{}\" id=\"m{}-{}\"><div class=\"mh\">", cls.join(" "), esc(&m.id), esc(&m.version));
+    let _ = write!(
+        h,
+        "<span class=\"time\">{}</span><span class=\"who\">{}</span>",
+        esc(&local(m.arrival)),
+        esc(&m.sender_name)
+    );
+    if m.from_me {
+        h.push_str("<span class=\"badge b-own\">account owner</span>");
+    }
+    if m.variant == Variant::Earlier {
+        let _ =
+            write!(h, "<span class=\"badge b-old\">earlier version · differs in {}</span>", esc(&m.changes.join(", ")));
+    }
+    if m.edited.is_some() {
+        let _ = write!(h, "<span class=\"badge b-edit\">edited {}</span>", esc(&local(m.edited)));
+    }
+    if m.deleted.is_some() {
+        let _ = write!(h, "<span class=\"badge b-del\">deleted {}</span>", esc(&local(m.deleted)));
+    }
+    if !m.prov.crc_ok {
+        h.push_str("<span class=\"badge b-crc\">CRC FAILED</span>");
+    }
+    h.push_str("</div>");
+    let _ = write!(h, "<div class=\"text\">{}</div>", esc(&m.text));
+
+    let mut d = String::from("<dl class=\"meta\">");
+    meta_row(&mut d, "Arrival (UTC)", &utc(m.arrival), false);
+    meta_row(&mut d, "Arrival (local)", &local(m.arrival), false);
+    meta_row(&mut d, "Client arrival (UTC)", &utc(m.client_arrival), false);
+    meta_row(&mut d, "Compose time", m.compose_time.as_deref().unwrap_or(""), false);
+    meta_row(&mut d, "Sender", &m.sender_name, false);
+    meta_row(&mut d, "Sender MRI", &m.sender_mri, false);
+    meta_row(&mut d, "Message ID", &m.id, false);
+    meta_row(&mut d, "Version", &m.version, false);
+    meta_row(&mut d, "Client message ID", &m.client_message_id, false);
+    meta_row(&mut d, "Reply chain ID", &m.reply_chain_id, false);
+    meta_row(&mut d, "Sequence ID", &m.sequence_id.map(|s| s.to_string()).unwrap_or_default(), false);
+    meta_row(&mut d, "Message type", &m.message_type, false);
+    meta_row(&mut d, "Content type", &m.content_type, false);
+    meta_row(&mut d, "Importance", &m.importance, false);
+    meta_row(&mut d, "Subject", &m.subject, false);
+    meta_row(&mut d, "Edited (UTC)", &utc(m.edited), false);
+    meta_row(&mut d, "Deleted (UTC)", &utc(m.deleted), false);
+    meta_row(&mut d, "Deleted by", m.deleted_by.as_deref().unwrap_or(""), false);
+    let reactions: Vec<String> =
+        m.reactions.iter().map(|r| format!("{} — {} ({}) at {}", r.emoji, r.name, r.mri, utc(r.time))).collect();
+    meta_row(&mut d, "Reactions", &reactions.join("\n"), true);
+    meta_row(&mut d, "Mentions", &m.mentions.join(", "), true);
+    let files: Vec<String> = m.files.iter().map(|f| format!("{} <{}>", f.name, f.url)).collect();
+    meta_row(&mut d, "Files", &files.join("\n"), true);
+    meta_row(
+        &mut d,
+        "Version status",
+        &format!(
+            "{} of {} known version(s){}",
+            if m.variant == Variant::Latest { "latest" } else { "earlier" },
+            m.versions_known,
+            if m.changes.is_empty() {
+                String::new()
+            } else {
+                format!("; differs from latest in: {}", m.changes.join(", "))
+            }
+        ),
+        true,
+    );
+    meta_row(
+        &mut d,
+        "Source record",
+        &format!(
+            "database {} · store {} · file {} · LevelDB seq {} · {} · CRC {} · seen in {} record(s)",
+            m.prov.database,
+            m.prov.store,
+            m.prov.file,
+            m.prov.seq,
+            m.prov.status.as_str(),
+            if m.prov.crc_ok { "ok" } else { "FAILED" },
+            m.occurrences
+        ),
+        true,
+    );
+    meta_row(&mut d, "Version fingerprint", &m.fingerprint, true);
+    d.push_str("</dl>");
+    h.push_str(&d);
+    let raw = serde_json::to_string_pretty(&m.raw).unwrap_or_default();
+    let _ = write!(
+        h,
+        "<details open><summary>Raw record (all fields)</summary><pre class=\"raw\">{}</pre></details>",
+        esc(&raw)
+    );
+    h.push_str("</article>");
+    h
+}
+
+fn conversation_html(ds: &Dataset, c: &Conversation) -> String {
+    let mut b = String::from("<p><a href=\"../index.html\">← Evidence report</a></p>");
+    let acc = ds.account(&c.account).map(|a| a.label()).unwrap_or_else(|| c.account.clone());
+    let members: Vec<String> = c.members.iter().map(|m| format!("{} [{}] {}", m.name, m.role, m.mri)).collect();
+    let mut rows = vec![
+        ("Conversation ID", format!("<code>{}</code>", esc(&c.id))),
+        ("Type", esc(&c.kind)),
+        ("Account", esc(&acc)),
+        ("Created (UTC)", esc(&utc(c.created))),
+        ("Last activity (UTC)", esc(&utc(c.last_activity))),
+        ("Messages in cache", c.message_count.to_string()),
+        ("Members", esc(&members.join("\n")).replace('\n', "<br>")),
+    ];
+    if let Some(p) = &c.prov {
+        rows.push((
+            "Source record",
+            esc(&format!(
+                "database {} · store {} · file {} · seq {} · {}",
+                p.database,
+                p.store,
+                p.file,
+                p.seq,
+                p.status.as_str()
+            )),
+        ));
+    }
+    if !c.has_metadata {
+        rows.push(("Note", "Known only from its messages (no conversation record in the cache).".into()));
+    }
+    b.push_str(&kv(&rows));
+    if !c.cache_purges.is_empty() {
+        b.push_str("<div class=\"card warn\"><b>Teams recorded cache purges for this conversation</b>: older messages may be missing from this cache.<ul>");
+        for p in &c.cache_purges {
+            let _ = write!(
+                b,
+                "<li>{} — removed {} reply chains (sync window {} … {})</li>",
+                esc(&utc(teams::as_ms(p.get("deleteTime")))),
+                esc(&json_str(p.get("deletedRCsCount"))),
+                esc(&utc(teams::as_ms(p.get("startOfSyncWindow")))),
+                esc(&utc(teams::as_ms(p.get("endOfSyncWindow")))),
+            );
+        }
+        b.push_str("</ul></div>");
+    }
+    b.push_str("<h2>Messages</h2><p class=\"mono\" style=\"color:#5f6b7a\">Times in the message headers are local; every message also lists UTC. Earlier versions recovered from the cache are shown indented, after the latest version.</p>");
+    let mut last_day = String::new();
+    for m in ds.messages.iter().filter(|m| m.account == c.account && m.conversation_id == c.id) {
+        let day = m
+            .arrival
+            .and_then(|ms| chrono::DateTime::from_timestamp_millis(ms as i64))
+            .map(|d| d.with_timezone(&chrono::Local).format("%A, %-d %B %Y").to_string())
+            .unwrap_or_else(|| "Unknown date".into());
+        if day != last_day {
+            let _ = write!(b, "<div class=\"day\"><span>{}</span></div>", esc(&day));
+            last_day = day;
+        }
+        b.push_str(&message_html(m));
+    }
+    page(&c.title, &format!("{} · {} · {} messages", c.kind, acc, c.message_count), &b)
+}
+
+/// Write `dir/index.html` and `dir/conversations/*.html`.
+pub fn write(ds: &Dataset, capture: &Json, dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(dir.join("conversations"))?;
+    std::fs::write(dir.join("index.html"), index_html(ds, capture))?;
+    for c in &ds.conversations {
+        std::fs::write(dir.join("conversations").join(format!("{}.html", slug(c))), conversation_html(ds, c))?;
+    }
+    Ok(())
+}

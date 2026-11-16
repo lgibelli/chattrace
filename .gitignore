@@ -1,0 +1,22 @@
+/target
+/dist
+*.staging/
+.DS_Store
+
+# local notes for the AI assistant (not published for now)
+CLAUDE.md
+
+# signing material and local release settings
+scripts/release.env
+*.p8
+*.p12
+*.key
+*.cer
+
+# never commit evidence, packages or Teams caches
+*.zip
+*.zip.sha256
+*.tsq
+*.tsr
+*.indexeddb.leveldb/
+*.indexeddb.blob/

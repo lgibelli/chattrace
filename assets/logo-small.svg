@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- ChatTrace Forensic app icon. SPDX-License-Identifier: GPL-3.0-or-later -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16305a"/><stop offset="1" stop-color="#08142a"/>
+    </linearGradient>
+    <linearGradient id="bubble" gradientUnits="userSpaceOnUse" x1="420" y1="238" x2="600" y2="806">
+      <stop offset="0" stop-color="#3be0cf"/><stop offset="1" stop-color="#13a4a0"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="184" fill="none" stroke="url(#rim)" stroke-width="3"/>
+  <g fill="url(#bubble)">
+    <path d="M376 238 H648 A150 150 0 0 1 798 388 V552 A150 150 0 0 1 648 702 H462 C420 742 360 782 300 806 C290 810 284 802 290 794 C316 760 330 734 336 697 A150 150 0 0 1 226 552 V388 A150 150 0 0 1 376 238 Z"/>
+  </g>
+  <g fill="none" stroke="#0a1a33" stroke-width="58" stroke-linecap="round">
+    <path d="M463.1 450.2 A52.0 52.0 0 1 1 463.1 485.8"/>
+    <path d="M390.8 538.0 A140.0 140.0 0 0 1 582.0 346.8"/>
+    <path d="M622.3 381.8 A140.0 140.0 0 0 1 559.9 599.6"/>
+  </g>
+</svg>

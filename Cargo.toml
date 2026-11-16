@@ -1,0 +1,60 @@
+[package]
+name = "chattrace"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-3.0-or-later"
+description = "ChatTrace Forensic: read-only viewer and evidence exporter for the Microsoft Teams desktop cache"
+authors = ["Luca Gibelli · Salamacchine"]
+repository = "https://github.com/lgibelli/chattrace"
+keywords = ["forensics", "ediscovery", "teams", "leveldb", "indexeddb"]
+categories = ["command-line-utilities", "gui"]
+default-run = "chattrace"
+publish = false
+
+[lib]
+name = "chattrace"
+path = "src/lib.rs"
+
+# GUI (on Windows a GUI-subsystem exe; on macOS it also accepts the CLI commands)
+[[bin]]
+name = "chattrace"
+path = "src/main.rs"
+
+# Console tool (needed on Windows, where the GUI exe has no console)
+[[bin]]
+name = "chattrace-cli"
+path = "src/bin/chattrace-cli.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+chrono = "0.4.45"
+clap = { version = "4.6.7", features = ["derive"] }
+csv = "1.4.0"
+eframe = "0.37.0"
+egui-pop-phosphor = "0.15.0"
+egui_extras = { version = "0.37.0", features = ["svg"] }
+hex = "0.4.3"
+iana-time-zone = "0.1.65"
+minisign-verify = "0.3.0"
+rfd = "0.18.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+snap = "1.1.2"
+walkdir = "2.5.0"
+zip = { version = "9.6.0", default-features = false, features = ["deflate"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+resvg = "0.45"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true
+
+[build-dependencies]
+winresource = "0.1.34"
