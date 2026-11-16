@@ -31,6 +31,8 @@ for b in chattrace chattrace-cli; do
   lipo -create -output "$APP/Contents/MacOS/$b" target/aarch64-apple-darwin/release/$b target/x86_64-apple-darwin/release/$b
 done
 cp assets/ChatTrace.icns "$APP/Contents/Resources/ChatTrace.icns"
+# License texts travel inside the signed bundle (DMG and updater zip alike).
+cp LICENSE THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.txt "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -86,7 +88,7 @@ ditto -c -k --sequesterRsrc --keepParent "$APP" "dist/$BASE.zip"
 STAGE=$(mktemp -d)
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
-cp README.md LICENSE "$STAGE/" 2>/dev/null || true
+cp README.md LICENSE THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.txt "$STAGE/"
 hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO -fs HFS+ "dist/$BASE.dmg" >/dev/null
 rm -rf "$STAGE"
 if [ -n "${MACOS_SIGNING_IDENTITY:-}" ]; then
