@@ -111,11 +111,18 @@ fn kind_of(p: &Path) -> (StoreKind, Option<&'static str>) {
     }
 }
 
+/// The user folder the store belongs to: the component after the innermost
+/// `Users` / `home`, so a disk image mounted inside the examiner's own profile
+/// (`C:\Users\examiner\case\image\Users\jdoe\…`) is attributed to `jdoe`.
 fn os_user(p: &Path) -> Option<String> {
     let parts: Vec<String> = p.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
     parts
         .iter()
-        .position(|c| c.eq_ignore_ascii_case("Users") || c.eq_ignore_ascii_case("home"))
+        .rposition(|c| {
+            c.eq_ignore_ascii_case("Users")
+                || c.eq_ignore_ascii_case("home")
+                || c.eq_ignore_ascii_case("Documents and Settings")
+        })
         .and_then(|i| parts.get(i + 1).cloned())
 }
 
@@ -250,7 +257,7 @@ const HOME_LAYOUTS: &[&str] = &[
 ///
 /// 1. `root` is itself a LevelDB folder → that folder.
 /// 2. Known layouts under `root`, `root/Users/*` and `root/home/*` (a disk or a home folder).
-/// 3. Otherwise a bounded recursive search (depth 16, skipping system folders).
+/// 3. Otherwise a bounded recursive search (depth 24, skipping system folders).
 pub fn discover(root: &Path, cancel: &AtomicBool, progress: &mut dyn FnMut(usize)) -> Vec<Found> {
     let mut out = Vec::new();
     if is_leveldb_dir(root) {
@@ -272,7 +279,7 @@ pub fn discover(root: &Path, cancel: &AtomicBool, progress: &mut dyn FnMut(usize
         }
     }
     if out.is_empty() {
-        collect_walk(root, 16, cancel, progress, &mut out);
+        collect_walk(root, 24, cancel, progress, &mut out);
     }
     finish(out)
 }

@@ -41,7 +41,7 @@ Commands that read a cache take `--source <path>` (short `-s`). The path can be 
   `/mnt/image`).
 
 ChatTrace looks for the known macOS and Windows Teams locations under the path, and under its
-`Users/*` and `home/*` folders. If they are missing, it searches the tree (up to 16 levels,
+`Users/*` and `home/*` folders. If they are missing, it searches the tree (up to 24 levels,
 skipping system folders). If exactly one cache is found it is used. If several are found,
 the command stops and lists them, so you can pass the one you mean.
 

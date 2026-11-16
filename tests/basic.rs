@@ -53,7 +53,8 @@ fn store_kinds_from_paths() {
 fn discover_finds_store_in_any_folder() {
     let root = tempdir("discover");
     assert!(discover::discover(&root, &AtomicBool::new(false), &mut |_| {}).is_empty());
-    let store = root.join("copy/of/disk/Users/jdoe/AppData/Local/Packages/MSTeams_8wekyb3d8bbwe/LocalCache/Microsoft/MSTeams/EBWebView/WV2Profile_tfw/IndexedDB/https_teams.microsoft.com_0.indexeddb.leveldb");
+    // An image mounted inside the examiner's own profile: attribute it to the user in the image.
+    let store = root.join("Users/examiner/case/image/Users/jdoe/AppData/Local/Packages/MSTeams_8wekyb3d8bbwe/LocalCache/Microsoft/MSTeams/EBWebView/WV2Profile_tfw/IndexedDB/https_teams.microsoft.com_0.indexeddb.leveldb");
     std::fs::create_dir_all(&store).unwrap();
     std::fs::write(store.join("CURRENT"), "MANIFEST-000001\n").unwrap();
     std::fs::write(store.join("MANIFEST-000001"), b"").unwrap();
