@@ -195,6 +195,9 @@ fn source_or_local(source: Option<PathBuf>) -> Result<Found> {
         return discover::resolve(&p);
     }
     let mut v = discover::local();
+    if v.is_empty() && !discover::local_blocked().is_empty() {
+        anyhow::bail!("Microsoft Teams is installed but its data cannot be read: {}", discover::access_help(false));
+    }
     if v.is_empty() {
         anyhow::bail!(
             "no Teams cache found for this computer's user; pass --source <path> (any folder, disk or copy), \
@@ -269,7 +272,18 @@ fn run(cmd: Cmd) -> Result<ExitCode> {
                     }
                     v
                 }
-                None => discover::local(),
+                None => {
+                    let v = discover::local();
+                    let blocked = discover::local_blocked();
+                    if v.is_empty() && !blocked.is_empty() && !json {
+                        for b in &blocked {
+                            eprintln!("Microsoft Teams is installed ({}) but its data cannot be read.", b.display());
+                        }
+                        eprintln!("{}", discover::access_help(false));
+                        return Ok(ExitCode::FAILURE);
+                    }
+                    v
+                }
             };
             if json {
                 println!("{}", serde_json::to_string_pretty(&v)?);

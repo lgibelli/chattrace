@@ -47,26 +47,97 @@ pub struct Found {
     pub live_local: bool,
 }
 
-/// Teams' own profile folders on this computer.
-pub fn local_roots() -> Vec<PathBuf> {
+/// Teams' folders on this computer: (the app's own folder, its profile folder inside).
+fn local_layouts() -> Vec<(PathBuf, PathBuf)> {
     let mut v = Vec::new();
     if cfg!(target_os = "macos") {
         if let Some(home) = std::env::var_os("HOME") {
             let h = PathBuf::from(home);
-            v.push(h.join(
-                "Library/Containers/com.microsoft.teams2/Data/Library/Application Support/Microsoft/MSTeams/EBWebView",
-            ));
-            v.push(h.join("Library/Application Support/Microsoft/Teams/IndexedDB"));
+            let app = h.join("Library/Containers/com.microsoft.teams2");
+            let root = app.join("Data/Library/Application Support/Microsoft/MSTeams/EBWebView");
+            v.push((app, root));
+            let app = h.join("Library/Application Support/Microsoft/Teams");
+            let root = app.join("IndexedDB");
+            v.push((app, root));
         }
     } else if cfg!(windows) {
         if let Some(la) = std::env::var_os("LOCALAPPDATA") {
-            v.push(PathBuf::from(la).join(r"Packages\MSTeams_8wekyb3d8bbwe\LocalCache\Microsoft\MSTeams\EBWebView"));
+            let app = PathBuf::from(la).join(r"Packages\MSTeams_8wekyb3d8bbwe");
+            let root = app.join(r"LocalCache\Microsoft\MSTeams\EBWebView");
+            v.push((app, root));
         }
         if let Some(ad) = std::env::var_os("APPDATA") {
-            v.push(PathBuf::from(ad).join(r"Microsoft\Teams\IndexedDB"));
+            let app = PathBuf::from(ad).join(r"Microsoft\Teams");
+            let root = app.join("IndexedDB");
+            v.push((app, root));
         }
     }
     v
+}
+
+/// Teams' own profile folders on this computer.
+pub fn local_roots() -> Vec<PathBuf> {
+    local_layouts().into_iter().map(|(_, root)| root).collect()
+}
+
+fn denied(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::PermissionDenied
+}
+
+/// Does the operating system refuse to let us read `p`? On macOS this is the
+/// protection of other apps' data and of external disks, lifted by allowing
+/// access or by Full Disk Access.
+pub fn access_denied(p: &Path) -> bool {
+    match std::fs::metadata(p) {
+        Err(e) => denied(&e),
+        Ok(m) => m.is_dir() && std::fs::read_dir(p).err().is_some_and(|e| denied(&e)),
+    }
+}
+
+/// Is something between `app` and `root` (inclusive) present but unreadable?
+fn blocked_below(app: &Path, root: &Path) -> bool {
+    for p in root.ancestors() {
+        match std::fs::metadata(p) {
+            Ok(m) => return m.is_dir() && std::fs::read_dir(p).err().is_some_and(|e| denied(&e)),
+            Err(e) if denied(&e) => return true,
+            Err(_) => {}
+        }
+        if p == app {
+            break;
+        }
+    }
+    false
+}
+
+/// Teams folders on this computer that exist but that the OS won't let us
+/// read (macOS privacy protection). Returns the Teams app folders.
+pub fn local_blocked() -> Vec<PathBuf> {
+    local_layouts().into_iter().filter(|(app, root)| blocked_below(app, root)).map(|(app, _)| app).collect()
+}
+
+/// What to tell the user when the OS blocks access (`gui`: wording for the app).
+pub fn access_help(gui: bool) -> &'static str {
+    if cfg!(target_os = "macos") {
+        if gui {
+            "macOS keeps other apps out of Teams' data, and out of external disks, until you allow it. \
+             ChatTrace only reads. Open System Settings › Privacy & Security › Full Disk Access, turn on \
+             ChatTrace Forensic (add it with + if it isn't listed), then quit and reopen ChatTrace."
+        } else {
+            "macOS is blocking access (privacy protection of other apps' data and external disks). \
+             Give the app you run this from (e.g. Terminal) Full Disk Access in System Settings › \
+             Privacy & Security › Full Disk Access, restart it, and try again."
+        }
+    } else {
+        "The operating system refused access. Check that your account can read this folder."
+    }
+}
+
+/// Open the Full Disk Access pane of System Settings (macOS).
+pub fn open_privacy_settings() {
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+        .spawn();
 }
 
 /// Stores of the Teams client installed on this computer.
@@ -300,6 +371,7 @@ pub fn resolve(p: &Path) -> anyhow::Result<Found> {
     }
     let mut v = discover(p, &AtomicBool::new(false), &mut |_| {});
     match v.len() {
+        0 if access_denied(p) => anyhow::bail!("cannot read {}: {}", p.display(), access_help(false)),
         0 => anyhow::bail!("no Teams IndexedDB found under {}", p.display()),
         1 => Ok(v.remove(0)),
         _ => {
@@ -369,4 +441,35 @@ pub fn same_volume(a: &Path, b: &Path) -> bool {
 /// What kind of store a path is (from its location).
 pub fn found_kind(p: &Path) -> StoreKind {
     kind_of(p).0
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn blocked_is_not_the_same_as_missing() {
+        let base = std::env::temp_dir().join(format!("chattrace-blocked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let app = base.join("teams-app");
+        let root = app.join("Data/EBWebView");
+        // Teams not installed: not blocked.
+        std::fs::create_dir_all(&base).unwrap();
+        assert!(!blocked_below(&app, &root));
+        // Installed and readable: not blocked.
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(!blocked_below(&app, &root));
+        assert!(!access_denied(&root));
+        // Installed but unreadable (what macOS does without permission): blocked.
+        let data = app.join("Data");
+        std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let readable_anyway = std::fs::read_dir(&data).is_ok(); // running as root
+        if !readable_anyway {
+            assert!(blocked_below(&app, &root));
+            assert!(access_denied(&data));
+        }
+        std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 }

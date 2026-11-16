@@ -37,9 +37,19 @@ The **Open a Teams cache** card on the right lists the sources:
 - **Explore the demo data** opens a fictional dataset, useful for training and to try the
   app without real data.
 
-On macOS the system may ask for permission the first time ChatTrace reads another
-app's data or an external disk. Allow it. If access is still refused, give ChatTrace Forensic
-*Full Disk Access* in *System Settings › Privacy & Security*.
+**macOS permission.** macOS keeps apps out of other apps' data (where Teams keeps its cache)
+and out of external disks until you allow it. The first time, it asks whether ChatTrace
+Forensic may "access data from other apps": click **Allow**. If access was refused, the welcome
+screen says *macOS is blocking access to Teams' data*, with two buttons:
+
+- **Open Full Disk Access settings**: turn on ChatTrace Forensic (add it with **+** if it isn't
+  listed), then quit and reopen ChatTrace. Full Disk Access also covers external disks and
+  other users' folders.
+- **Check again**: look again after allowing access.
+
+To get the original question back instead, quit ChatTrace and run
+`tccutil reset SystemPolicyAppData it.salamacchine.chattrace` in Terminal, then reopen it.
+ChatTrace only ever reads these files.
 
 ## The viewer
 

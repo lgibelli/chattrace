@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- macOS: when privacy protection blocks access to Teams' data, the app now says so (instead of
+  "No Teams cache found"), with buttons to open the Full Disk Access settings and to check again.
+  Folder searches and the command line report it too.
+
 ## 0.1.0 (2026-11-16)
 
 First public version.

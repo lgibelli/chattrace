@@ -271,8 +271,14 @@ fn right_column(app: &mut App, ui: &mut egui::Ui, running: bool, busy: bool) {
         }
 
         theme::section(ui, "On this computer");
+        if !app.local_blocked.is_empty() {
+            access_banner(ui, "macOS is blocking access to Teams' data", &mut app.actions);
+            ui.add_space(4.0);
+        }
         if app.local.is_empty() {
-            ui.label(theme::muted("No Teams cache found for this computer's user."));
+            if app.local_blocked.is_empty() {
+                ui.label(theme::muted("No Teams cache found for this computer's user."));
+            }
         } else {
             if running {
                 theme::banner(AMBER).show(ui, |ui| {
@@ -325,7 +331,10 @@ fn right_column(app: &mut App, ui: &mut egui::Ui, running: bool, busy: bool) {
         }
         if let Some((root, v)) = &app.scan_result {
             ui.add_space(6.0);
-            if v.is_empty() {
+            if v.is_empty() && app.scan_denied {
+                let title = format!("macOS did not allow ChatTrace to read {}", root.display());
+                access_banner(ui, &title, &mut app.actions);
+            } else if v.is_empty() {
                 ui.label(theme::muted(format!("No Teams cache found under {}.", root.display())));
             } else {
                 ui.label(theme::muted(format!("{} found under {}", v.len(), root.display())).size(12.5));
@@ -345,6 +354,28 @@ fn right_column(app: &mut App, ui: &mut egui::Ui, running: bool, busy: bool) {
             ui.label(theme::muted("·"));
             if ui.link(format!("{} Explore the demo data", ph::PLAY_CIRCLE)).clicked() {
                 app.actions.push(Action::Demo);
+            }
+        });
+    });
+}
+
+/// The OS refused access: say so plainly, and how to allow it.
+fn access_banner(ui: &mut egui::Ui, title: &str, actions: &mut Vec<Action>) {
+    theme::banner(AMBER).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(theme::icon(ph::LOCK_SIMPLE, 18.0, AMBER));
+            ui.label(theme::title(title, 14.0).color(AMBER));
+        });
+        ui.add(egui::Label::new(RichText::new(crate::discover::access_help(true)).size(12.5)).wrap());
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if cfg!(target_os = "macos")
+                && theme::primary(ui, &format!("{}  Open Full Disk Access settings", ph::GEAR_SIX)).clicked()
+            {
+                crate::discover::open_privacy_settings();
+            }
+            if theme::secondary(ui, &format!("{}  Check again", ph::ARROWS_CLOCKWISE)).clicked() {
+                actions.push(Action::Welcome);
             }
         });
     });

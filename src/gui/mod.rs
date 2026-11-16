@@ -106,11 +106,15 @@ pub(crate) struct ViewState {
 pub struct App {
     splash_start: Option<f64>,
     local: Vec<Found>,
+    /// Teams folders on this computer that macOS won't let us read.
+    local_blocked: Vec<PathBuf>,
     teams_running: bool,
     teams_checked: Option<Instant>,
     path_input: String,
     scan: Option<ScanJob>,
     scan_result: Option<(PathBuf, Vec<Found>)>,
+    /// The last searched folder could not be read (OS permission).
+    scan_denied: bool,
     load: Option<LoadJob>,
     data: Option<Loaded>,
     error: Option<String>,
@@ -128,11 +132,13 @@ impl App {
         let mut app = App {
             splash_start: None,
             local: discover::local(),
+            local_blocked: discover::local_blocked(),
             teams_running: false,
             teams_checked: None,
             path_input: String::new(),
             scan: None,
             scan_result: None,
+            scan_denied: false,
             load: None,
             data: None,
             error: None,
@@ -222,6 +228,7 @@ impl App {
                 self.data = None;
                 self.error = None;
                 self.local = discover::local();
+                self.local_blocked = discover::local_blocked();
             }
             Action::Reload => {
                 if let Some(f) = self.data.as_ref().and_then(|d| d.source.clone()) {
@@ -253,6 +260,7 @@ impl App {
             if s.auto_open && v.len() == 1 {
                 self.actions.push(Action::Open(v[0].clone()));
             }
+            self.scan_denied = v.is_empty() && discover::access_denied(&s.root);
             self.scan_result = Some((s.root, v));
         }
         if let Some(l) = &self.load
