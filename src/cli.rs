@@ -100,6 +100,18 @@ enum Cmd {
         #[arg(long)]
         check: bool,
     },
+    /// Show crash reports saved on this computer; send them only with --send.
+    CrashReport {
+        /// Send the reports shown (to the developer's Sentry), then delete them.
+        #[arg(long, conflicts_with = "discard")]
+        send: bool,
+        /// Delete the reports without sending them.
+        #[arg(long)]
+        discard: bool,
+    },
+    /// Testing: crash on purpose to check crash reporting.
+    #[command(hide = true)]
+    CrashTest,
     /// Advanced: list IndexedDB databases and object stores with record counts.
     Stores {
         #[arg(long, short)]
@@ -167,6 +179,7 @@ pub fn main(gui_by_default: bool) -> ExitCode {
             return ExitCode::SUCCESS;
         }
     };
+    crate::crash::install(if matches!(cmd, Cmd::View { .. }) { "gui" } else { "cli" });
     match run(cmd) {
         Ok(code) => code,
         Err(e) => {
@@ -356,6 +369,42 @@ fn run(cmd: Cmd) -> Result<ExitCode> {
                     }
                 }
             }
+        }
+        Cmd::CrashReport { send, discard } => {
+            if !crate::crash::available() {
+                println!("This build of {APP_NAME} has no crash reporting (only official releases do).");
+                return Ok(ExitCode::SUCCESS);
+            }
+            let reports = crate::crash::pending();
+            if reports.is_empty() {
+                println!("No crash reports are saved on this computer.");
+                return Ok(ExitCode::SUCCESS);
+            }
+            if discard {
+                crate::crash::discard(&reports);
+                println!("Deleted {} crash report(s); nothing was sent.", reports.len());
+                return Ok(ExitCode::SUCCESS);
+            }
+            for r in &reports {
+                println!("{}\n", r.preview());
+            }
+            if send {
+                for r in &reports {
+                    crate::crash::send(r)?;
+                }
+                println!("Sent {} crash report(s). Thank you.", reports.len());
+            } else {
+                println!(
+                    "{} crash report(s) above are saved on this computer and have NOT been sent.\n\
+                     This is everything a report contains. To send them: chattrace-cli crash-report --send\n\
+                     To delete them: chattrace-cli crash-report --discard",
+                    reports.len()
+                );
+            }
+        }
+        Cmd::CrashTest => {
+            // The quoted text and the path must not appear in the saved report.
+            panic!("crash test: \"Ciao Mario\" in /Users/jdoe/Case-Rossi");
         }
         Cmd::License => {
             println!("{}\nAuthor: {} ({})", crate::gui::LICENSE_NOTICE, crate::AUTHOR, crate::WEBSITE);

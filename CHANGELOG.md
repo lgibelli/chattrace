@@ -11,3 +11,4 @@ First public version.
   metadata, JSON, transcripts; verified zip and `.sha256` file.
 - `verify` for evidence packages; `discover` to find Teams caches anywhere.
 - Signed, notarized macOS app; Windows and Linux builds; signed in-app updates.
+- Crash reports, sent only after the user has seen and approved each one (official builds only).

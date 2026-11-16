@@ -44,6 +44,11 @@ Every release has a `SHA256SUMS` file and its minisign signature `SHA256SUMS.min
 versions at launch and can update itself after verifying that signature. The check
 can be turned off (see [Updates](docs/gui.md#updates)).
 
+**Privacy.** No account, no telemetry, and your chats never leave your computer. The only
+network traffic is the update check and, after a crash, a crash report **only if you approve
+it**: ChatTrace shows you the exact report first, which has no chat content, paths, names or
+IDs (see [Crash reports](docs/gui.md#crash-reports)).
+
 ## Quick start
 
 1. **Quit Microsoft Teams completely** (macOS: Teams › Quit; Windows: tray icon › Quit).

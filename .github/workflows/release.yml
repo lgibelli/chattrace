@@ -8,7 +8,8 @@ name: Release
 #
 # Secrets (set with scripts/set-ci-secrets.sh): MACOS_CERT_P12_BASE64,
 # MACOS_CERT_PASSWORD, APPLE_API_KEY_B64, APPLE_API_KEY_ID, APPLE_API_ISSUER,
-# MINISIGN_KEY. Variable: MACOS_SIGNING_IDENTITY. Never reachable from pull requests.
+# MINISIGN_KEY, SENTRY_DSN (optional: compiled in for opt-in crash reports).
+# Variable: MACOS_SIGNING_IDENTITY. Never reachable from pull requests.
 
 on:
   push:
@@ -25,6 +26,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Crash reports (sent only after the user approves each one); empty = disabled.
+  CHATTRACE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
 
 jobs:
   draft:

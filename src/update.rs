@@ -30,18 +30,21 @@ pub struct Release {
 // ------------------------------------------------------------------ settings
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Settings {
     pub update_check: bool,
     pub skip_version: Option<String>,
+    /// Offer to send a crash report after a crash (see crate::crash).
+    pub crash_reports: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { update_check: true, skip_version: None }
+        Settings { update_check: true, skip_version: None, crash_reports: true }
     }
 }
 
-fn config_dir() -> Option<PathBuf> {
+pub(crate) fn config_dir() -> Option<PathBuf> {
     if cfg!(target_os = "macos") {
         std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/ChatTrace Forensic"))
     } else if cfg!(windows) {
@@ -79,6 +82,12 @@ pub fn auto_check_enabled() -> bool {
 // --------------------------------------------------------------------- http
 
 fn curl(args: &[&str]) -> Result<Vec<u8>> {
+    curl_with_input(args, None)
+}
+
+/// Run the OS curl (HTTPS only); `input` is passed on stdin (for `--data-binary @-`).
+pub(crate) fn curl_with_input(args: &[&str], input: Option<&[u8]>) -> Result<Vec<u8>> {
+    use std::process::Stdio;
     let bin = if cfg!(windows) { "curl.exe" } else { "curl" };
     let ua = format!("ChatTrace-Forensic/{}", crate::VERSION);
     let mut c = std::process::Command::new(bin);
@@ -89,9 +98,15 @@ fn curl(args: &[&str]) -> Result<Vec<u8>> {
         use std::os::windows::process::CommandExt;
         c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
-    let o = c.output().with_context(|| format!("running {bin}"))?;
+    c.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = c.spawn().with_context(|| format!("running {bin}"))?;
+    if let (Some(data), Some(mut stdin)) = (input, child.stdin.take()) {
+        let data = data.to_vec();
+        std::thread::spawn(move || std::io::Write::write_all(&mut stdin, &data));
+    }
+    let o = child.wait_with_output().with_context(|| format!("running {bin}"))?;
     if !o.status.success() {
-        bail!("download failed: {}", String::from_utf8_lossy(&o.stderr).trim());
+        bail!("network request failed: {}", String::from_utf8_lossy(&o.stderr).trim());
     }
     Ok(o.stdout)
 }

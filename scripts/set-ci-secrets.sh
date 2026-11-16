@@ -21,5 +21,6 @@ base64 < "$APPLE_API_KEY_PATH" | tr -d '\n' | gh secret set APPLE_API_KEY_B64 -R
 printf '%s' "$APPLE_API_KEY_ID" | gh secret set APPLE_API_KEY_ID -R "$REPO"
 printf '%s' "$APPLE_API_ISSUER" | gh secret set APPLE_API_ISSUER -R "$REPO"
 gh secret set MINISIGN_KEY -R "$REPO" < "$MINISIGN_KEY_PATH"
+if [ -n "${SENTRY_DSN:-}" ]; then printf '%s' "$SENTRY_DSN" | gh secret set SENTRY_DSN -R "$REPO"; fi
 gh variable set MACOS_SIGNING_IDENTITY -R "$REPO" --body "$MACOS_SIGNING_IDENTITY"
 echo "done: secrets and variables set on $REPO"

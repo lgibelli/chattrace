@@ -6,6 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -f scripts/release.env ] && source scripts/release.env
+export CHATTRACE_SENTRY_DSN="${SENTRY_DSN:-}"   # compiled in; empty = no crash reports
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 
 scripts/build-macos.sh

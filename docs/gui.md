@@ -136,10 +136,30 @@ To turn the check off, untick *Check for updates when ChatTrace starts* in **Abo
 also start the app with `--no-update-check` or with the environment variable
 `CHATTRACE_NO_UPDATE_CHECK=1`. *Check now* in About checks on demand.
 
+## Crash reports
+
+If ChatTrace crashes, it saves a crash report on your computer, and **sends nothing**. At the
+next launch it shows the report and asks:
+
+- **Send report**: sends it over HTTPS to the developer's Sentry account (hosted in the EU, set
+  to store neither IP addresses nor locations), to help fix the bug.
+- **Don't send**: deletes it.
+- **Never ask**: deletes it and stops saving crash reports (turn it back on in **About**).
+
+The dialog shows the exact text that would be sent: the ChatTrace version, the operating system
+and its version, the processor type, where in ChatTrace's code the crash happened (function
+names), and the error message with any quoted text, file paths, e-mail addresses and IDs
+removed. It contains no chat content, nothing about your cases or evidence, and no computer or
+user name. Reports are kept in ChatTrace's settings folder, readable only by you, and at most
+three are kept.
+
+Only the official releases can send reports; copies built from source never do. To turn
+reports off entirely, untick the option in **About**, or set `CHATTRACE_NO_CRASH_REPORTS=1`.
+
 ## About
 
 **About** shows the version, author, license, links to the source code and third-party
-notices, and the update settings.
+notices, and the update and crash-report settings.
 
 ## Keyboard and mouse
 

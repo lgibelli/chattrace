@@ -20,6 +20,7 @@ chattrace-cli <COMMAND> [OPTIONS]
   export     Create an evidence package (zip)
   verify     Verify an evidence zip
   update     Check for a newer version and install it
+  crash-report  Show saved crash reports; send them only with --send
   license    Print the license and third-party notices
   stores, sample, fields   Advanced: inspect the raw IndexedDB stores
 
@@ -127,6 +128,19 @@ chattrace-cli update           # download, verify signature + checksum, install
 
 See [Updates](gui.md#updates) for how an update is verified.
 
+## crash-report
+
+```sh
+chattrace-cli crash-report            # show saved crash reports (nothing is sent)
+chattrace-cli crash-report --send     # send them to the developer, then delete them
+chattrace-cli crash-report --discard  # delete them without sending
+```
+
+When the command line crashes, it saves a report and says so; it never sends anything by itself.
+The report printed by `crash-report` is everything that would be sent. See
+[Crash reports](gui.md#crash-reports) for what it contains. Only official releases can send
+reports.
+
 ## Advanced: stores, sample, fields
 
 For examining the raw IndexedDB content, for example to study a new Teams version:
@@ -146,3 +160,4 @@ name.
 | Variable | Effect |
 |---|---|
 | `CHATTRACE_NO_UPDATE_CHECK=1` | never check for updates at startup |
+| `CHATTRACE_NO_CRASH_REPORTS=1` | never save or offer crash reports |

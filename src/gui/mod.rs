@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Desktop app: splash → welcome (choose a source) → viewer; export, verify, about.
 
+mod crash;
 mod dialogs;
 pub(crate) mod icons;
 mod theme;
@@ -118,6 +119,7 @@ pub struct App {
     verify: Option<dialogs::VerifyUi>,
     about: bool,
     pub(crate) updater: updates::Updater,
+    crash: crash::CrashUi,
     actions: Vec<Action>,
 }
 
@@ -139,6 +141,7 @@ impl App {
             verify: None,
             about: false,
             updater: updates::Updater::new(ctx),
+            crash: crash::CrashUi::new(),
             actions: Vec::new(),
         };
         match start {
@@ -300,6 +303,7 @@ impl eframe::App for App {
             self.apply(&ctx, a);
         }
         if self.updater.busy()
+            || self.crash.busy()
             || self.scan.is_some()
             || self.load.is_some()
             || self.export.as_ref().is_some_and(|e| e.running())
@@ -335,6 +339,7 @@ impl eframe::App for App {
             self.about = false;
         }
         self.updater.show_dialog(&ctx);
+        self.crash.show(&ctx, &mut self.updater.settings);
     }
 }
 

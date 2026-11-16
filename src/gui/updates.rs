@@ -231,5 +231,20 @@ impl Updater {
                 ui.label(RichText::new(s).size(12.0).color(MUTED));
             }
         });
+        if crate::crash::available() {
+            ui.add_space(6.0);
+            theme::section(ui, "Crash reports");
+            let mut on = self.settings.crash_reports;
+            if ui.checkbox(&mut on, "After a crash, offer to send a crash report").changed() {
+                self.settings.crash_reports = on;
+                self.settings.save();
+            }
+            ui.label(
+                theme::muted(
+                    "Nothing is sent without your click: the report is shown first. It has no chat content,                      paths, names or IDs.",
+                )
+                .size(11.5),
+            );
+        }
     }
 }

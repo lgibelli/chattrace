@@ -15,6 +15,7 @@
 //! ChatTrace Forensic is not affiliated with Microsoft.
 
 pub mod cli;
+pub mod crash;
 pub mod demo;
 pub mod discover;
 pub mod evidence;
