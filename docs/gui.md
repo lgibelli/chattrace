@@ -48,7 +48,7 @@ screen says *macOS is blocking access to Teams' data*, with two buttons:
 - **Check again**: look again after allowing access.
 
 To get the original question back instead, quit ChatTrace and run
-`tccutil reset SystemPolicyAppData it.salamacchine.chattrace` in Terminal, then reopen it.
+`tccutil reset All it.salamacchine.chattrace` in Terminal, then reopen it.
 ChatTrace only ever reads these files.
 
 ## The viewer
