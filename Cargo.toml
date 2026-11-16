@@ -32,7 +32,6 @@ chrono = "0.4.45"
 clap = { version = "4.6.7", features = ["derive"] }
 csv = "1.4.0"
 eframe = "0.37.0"
-egui-pop-phosphor = "0.15.0"
 egui_extras = { version = "0.37.0", features = ["svg"] }
 hex = "0.4.3"
 iana-time-zone = "0.1.65"

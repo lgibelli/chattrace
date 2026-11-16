@@ -1,0 +1,5 @@
+# Signed fixtures must keep their exact bytes (no CRLF conversion on Windows).
+tests/fixtures/** -text
+*.minisig -text
+# Shell scripts run on macOS/Linux runners.
+*.sh text eol=lf

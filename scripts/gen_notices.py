@@ -44,6 +44,10 @@ body = (
 open(path, "w", encoding="utf-8").write(head + body)
 
 out = ["ChatTrace Forensic third-party license texts", "=" * 44, ""]
+# Assets bundled in the binaries (not crates)
+for title, f in [("Inter font (Regular, SemiBold)  —  OFL-1.1", "assets/fonts/Inter-LICENSE.txt"),
+                 ("Phosphor Icons font  —  MIT", "assets/fonts/Phosphor-LICENSE.txt")]:
+    out += ["-" * 78, title, "-" * 78, open(f, encoding="utf-8").read().rstrip() + "\n"]
 missing = []
 for p in crates:
     d = os.path.dirname(p["manifest_path"])

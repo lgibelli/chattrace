@@ -48,6 +48,11 @@ CSV files are UTF-8 with a byte-order mark, so Excel opens them correctly. Times
 are RFC 3339 in UTC with milliseconds. `*_local` adds the capture computer's time zone, which is
 stored in the manifest.
 
+Chat messages are written by other people, and a message such as `=HYPERLINK(…)` would become a
+live formula in a spreadsheet. So in the CSV files, a cell that begins with `=`, `+`, `-`, `@`
+(or their full-width forms), a tab or a carriage return is prefixed with `'`, and spreadsheet
+programs show it as text. The `.jsonl` files and the HTML report keep the exact values.
+
 ## The HTML report
 
 Open `readable/report/index.html` in any browser. It works offline and loads nothing from the

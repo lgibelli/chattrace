@@ -2,6 +2,7 @@
 //! Desktop app: splash → welcome (choose a source) → viewer; export, verify, about.
 
 mod dialogs;
+pub(crate) mod icons;
 mod theme;
 mod updates;
 mod viewer;

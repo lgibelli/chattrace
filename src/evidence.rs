@@ -172,10 +172,37 @@ fn short_hash(s: &str) -> String {
     hex::encode(&Sha256::digest(s.as_bytes())[..4])
 }
 
-fn csv_writer(p: &Path) -> Result<csv::Writer<BufWriter<File>>> {
+/// Characters that make spreadsheet programs treat a cell as a formula (including
+/// the full-width forms some locales accept).
+const FORMULA_START: &[char] = &['=', '+', '-', '@', '\t', '\r', '\u{FF1D}', '\u{FF0B}', '\u{FF0D}', '\u{FF20}'];
+
+/// Chat content is written by other people: a message such as `=HYPERLINK(…)` must
+/// not become a live formula when the CSV is opened in Excel, LibreOffice or Numbers.
+/// Such cells get a leading `'`; the exact values are in the .jsonl files.
+pub fn csv_cell(v: &str) -> std::borrow::Cow<'_, str> {
+    if v.starts_with(FORMULA_START) { format!("'{v}").into() } else { v.into() }
+}
+
+/// CSV writer that neutralizes formula-like cells (see [`csv_cell`]).
+struct CsvOut(csv::Writer<BufWriter<File>>);
+
+impl CsvOut {
+    fn write_record<I, T>(&mut self, record: I) -> csv::Result<()>
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
+        self.0.write_record(record.into_iter().map(|v| csv_cell(v.as_ref()).into_owned()))
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
+
+fn csv_writer(p: &Path) -> Result<CsvOut> {
     let mut f = BufWriter::new(File::create(p)?);
     f.write_all(b"\xEF\xBB\xBF")?; // UTF-8 BOM so Excel detects the encoding
-    Ok(csv::Writer::from_writer(f))
+    Ok(CsvOut(csv::Writer::from_writer(f)))
 }
 
 fn reactions_str(m: &Message) -> String {
@@ -741,6 +768,9 @@ pub fn export(opts: &ExportOptions, progress: &dyn Fn(Progress)) -> Result<Expor
          \x20 transcripts/       plain-text transcript per conversation\n\
          \x20 *.jsonl            full decoded records with provenance (database, store, file, LevelDB sequence, status)\n\
          \x20 all_records.jsonl  every record of every IndexedDB store, all versions (if selected)\n\
+         \x20 In the CSV files, a cell that begins with = + - @ (or a tab or carriage return) is prefixed\n\
+         \x20 with ' so spreadsheet programs show it as text instead of running it as a formula.\n\
+         \x20 The exact values are in the .jsonl files.\n\
          manifest.json  capture details, coverage, warnings, limitations and SHA-256 of every file\n\
          SHA256SUMS     checksums of every file in this package (except itself)\n\n\
          Verify:  shasum -a 256 -c SHA256SUMS     (macOS/Linux, run inside the extracted folder)\n\

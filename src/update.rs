@@ -191,12 +191,51 @@ fn team_id(app: &Path) -> Option<String> {
     out.lines().find_map(|l| l.strip_prefix("TeamIdentifier=")).map(|s| s.trim().to_string()).filter(|s| s != "not set")
 }
 
-fn extract(zip_path: &Path, dest: &Path) -> Result<()> {
-    let mut za = zip::ZipArchive::new(std::fs::File::open(zip_path)?)?;
+/// A new, private (0700 on Unix) working folder with an unguessable name. Creation
+/// is exclusive: it fails rather than reuse anything that already exists.
+fn private_work_dir() -> Result<PathBuf> {
+    use sha2::{Digest, Sha256};
+    let base = std::env::temp_dir();
+    for attempt in 0u32..16 {
+        let mut h = Sha256::new();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+        let local = 0u8;
+        h.update(format!("{}:{}:{attempt}:{:p}", std::process::id(), now.as_nanos(), &local));
+        let dir = base.join(format!("chattrace-update-{}", &hex::encode(h.finalize())[..24]));
+        let mut b = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        match b.create(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e).context("creating a private folder for the update"),
+        }
+    }
+    bail!("could not create a private folder for the update")
+}
+
+/// Refuse to write through a symbolic link that an earlier zip entry created.
+fn ensure_no_symlink(dest: &Path, out: &Path) -> Result<()> {
+    let mut p = out.parent();
+    while let Some(d) = p {
+        if d == dest || !d.starts_with(dest) {
+            break;
+        }
+        if std::fs::symlink_metadata(d).is_ok_and(|m| m.file_type().is_symlink()) {
+            bail!("unsafe path in update zip");
+        }
+        p = d.parent();
+    }
+    Ok(())
+}
+
+fn extract(zip_bytes: &[u8], dest: &Path) -> Result<()> {
+    let mut za = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes))?;
     for i in 0..za.len() {
         let mut f = za.by_index(i)?;
         let Some(rel) = f.enclosed_name() else { bail!("unsafe path in update zip") };
         let out = dest.join(rel);
+        ensure_no_symlink(dest, &out)?;
         if f.is_dir() {
             std::fs::create_dir_all(&out)?;
             continue;
@@ -204,6 +243,7 @@ fn extract(zip_path: &Path, dest: &Path) -> Result<()> {
         if let Some(p) = out.parent() {
             std::fs::create_dir_all(p)?;
         }
+        ensure_no_symlink(dest, &out)?;
         #[cfg(unix)]
         let is_link = f.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000);
         #[cfg(not(unix))]
@@ -217,7 +257,8 @@ fn extract(zip_path: &Path, dest: &Path) -> Result<()> {
             }
             continue;
         }
-        let mut w = std::fs::File::create(&out)?;
+        // create_new: never follow or overwrite something already at that path
+        let mut w = std::fs::OpenOptions::new().write(true).create_new(true).open(&out)?;
         std::io::copy(&mut f, &mut w)?;
         #[cfg(unix)]
         if let Some(m) = f.unix_mode() {
@@ -231,9 +272,7 @@ fn extract(zip_path: &Path, dest: &Path) -> Result<()> {
 /// Download, verify and install `rel`. Returns what to relaunch.
 pub fn install(rel: &Release, progress: &dyn Fn(&str)) -> Result<PathBuf> {
     let name = asset_name(&rel.version);
-    let tmp = std::env::temp_dir().join(format!("chattrace-update-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(&tmp)?;
+    let tmp = private_work_dir()?;
 
     progress("Downloading the signed checksums…");
     let sums = curl(&["--max-time", "60", rel.url("SHA256SUMS")?])?;
@@ -241,16 +280,20 @@ pub fn install(rel: &Release, progress: &dyn Fn(&str)) -> Result<PathBuf> {
     let want = verified_hash(&sums, &String::from_utf8_lossy(&sig), &name)?;
 
     progress(&format!("Downloading {name}…"));
-    let zip_path = tmp.join(&name);
-    curl(&["--max-time", "900", "-o", &zip_path.to_string_lossy(), rel.url(&name)?])?;
+    // Kept in memory: the bytes that are verified are the bytes that are unpacked.
+    let zip_bytes = curl(&["--max-time", "900", rel.url(&name)?])?;
     progress("Verifying the download…");
-    let (got, _) = crate::evidence::sha256_file(&zip_path)?;
+    let got = {
+        use sha2::{Digest, Sha256};
+        hex::encode(Sha256::digest(&zip_bytes))
+    };
     if got != want {
         bail!("the downloaded file does not match its signed checksum; nothing was changed");
     }
     progress("Unpacking…");
     let x = tmp.join("x");
-    extract(&zip_path, &x)?;
+    extract(&zip_bytes, &x)?;
+    drop(zip_bytes);
 
     let exe = std::env::current_exe()?.canonicalize()?;
     #[cfg(target_os = "macos")]
@@ -362,6 +405,59 @@ mod tests {
         let sums = b"0000  ChatTrace-Forensic-9.9.9-macos-universal.zip\n";
         let bogus = "untrusted comment: x\nRUQS/nTr3WZDCPSzTsnfOTk0BB3qWqMbUv0E3mk/3LZALUJug7z3DWaWAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\ntrusted comment: x\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n";
         assert!(verified_hash(sums, bogus, "ChatTrace-Forensic-9.9.9-macos-universal.zip").is_err());
+    }
+
+    fn zip_of(build: impl FnOnce(&mut zip::ZipWriter<std::io::Cursor<Vec<u8>>>)) -> Vec<u8> {
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        build(&mut w);
+        w.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn private_work_dirs_are_new_and_unique() {
+        let a = private_work_dir().unwrap();
+        let b = private_work_dir().unwrap();
+        assert_ne!(a, b);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&a).unwrap().permissions().mode() & 0o777, 0o700);
+        }
+        let _ = std::fs::remove_dir_all(a);
+        let _ = std::fs::remove_dir_all(b);
+    }
+
+    #[test]
+    fn extracts_files() {
+        use std::io::Write;
+        let opts = zip::write::SimpleFileOptions::default();
+        let z = zip_of(|w| {
+            w.add_directory("App.app/Contents/", opts).unwrap();
+            w.start_file("App.app/Contents/Info.plist", opts).unwrap();
+            w.write_all(b"plist").unwrap();
+        });
+        let d = private_work_dir().unwrap();
+        extract(&z, &d.join("x")).unwrap();
+        assert_eq!(std::fs::read(d.join("x/App.app/Contents/Info.plist")).unwrap(), b"plist");
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_write_through_symlinks() {
+        use std::io::Write;
+        let opts = zip::write::SimpleFileOptions::default();
+        let outside = private_work_dir().unwrap();
+        let z = zip_of(|w| {
+            w.add_symlink("link", outside.to_string_lossy(), opts).unwrap();
+            w.start_file("link/planted", opts).unwrap();
+            w.write_all(b"x").unwrap();
+        });
+        let d = private_work_dir().unwrap();
+        assert!(extract(&z, &d.join("x")).is_err());
+        assert!(!outside.join("planted").exists());
+        let _ = std::fs::remove_dir_all(d);
+        let _ = std::fs::remove_dir_all(outside);
     }
 }
 

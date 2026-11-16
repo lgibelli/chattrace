@@ -96,3 +96,14 @@ fn verify_detects_changes() {
     assert!(!evidence::verify_zip(&good, &|_| {}).unwrap().ok(), "a wrong sidecar must fail");
     std::fs::remove_dir_all(d).unwrap();
 }
+
+#[test]
+fn csv_cells_cannot_become_formulas() {
+    use chattrace::evidence::csv_cell;
+    for bad in ["=1+1", "+SUM(A1)", "-2+3", "@cmd", "\t=x", "\r=x", "\u{FF1D}1+1"] {
+        assert_eq!(csv_cell(bad), format!("'{bad}"), "{bad:?}");
+    }
+    for ok in ["hello", "2026-11-16T10:00:00Z", "19:abc@thread.v2", "", "a=b"] {
+        assert_eq!(csv_cell(ok), ok);
+    }
+}

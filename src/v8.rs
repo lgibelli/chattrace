@@ -168,7 +168,7 @@ impl<'a> Deserializer<'a> {
     fn two_byte_string(&mut self) -> Result<String> {
         let n = self.varint()? as usize;
         let b = self.bytes(n)?;
-        let units: Vec<u16> = b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let units: Vec<u16> = b.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
         Ok(String::from_utf16_lossy(&units))
     }
 

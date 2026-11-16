@@ -4,7 +4,7 @@
 use eframe::egui::{self, Color32, CornerRadius, FontData, FontFamily, FontId, Margin, RichText, Stroke, TextStyle};
 use std::sync::Arc;
 
-pub use egui_phosphor::regular as ph;
+pub(crate) use super::icons as ph;
 
 pub const BAR: Color32 = Color32::from_rgb(0x0a, 0x12, 0x20);
 pub const BG: Color32 = Color32::from_rgb(0x0e, 0x17, 0x26);
@@ -37,7 +37,13 @@ pub fn install(ctx: &egui::Context) {
     if let Some(p) = fonts.families.get_mut(&FontFamily::Proportional) {
         p.insert(0, "inter".into());
     }
-    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+    // Phosphor icons right after Inter (whose Private Use Area mappings were removed).
+    fonts
+        .font_data
+        .insert("phosphor".into(), Arc::new(FontData::from_static(include_bytes!("../../assets/fonts/Phosphor.ttf"))));
+    if let Some(p) = fonts.families.get_mut(&FontFamily::Proportional) {
+        p.insert(1, "phosphor".into());
+    }
     let mut sb = vec!["inter-semibold".to_string()];
     sb.extend(fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default());
     fonts.families.insert(semibold(), sb);
